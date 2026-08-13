@@ -1,0 +1,23 @@
+[project]
+name = "moc-minimax-h3-references"
+version = "0.2.0"
+description = "Feature-rich MiniMax H3 reference conditioning for ComfyUI with aliases, per-image masks, diagnostics, and experimental signal weights."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = []
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+]
+
+[project.urls]
+Repository = "https://github.com/mocliamg1/moc_minimax"
+Documentation = "https://github.com/mocliamg1/moc_minimax#readme"
+"Bug Tracker" = "https://github.com/mocliamg1/moc_minimax/issues"
+
+[tool.comfy]
+PublisherId = "mocliamg1"
+DisplayName = "MOC MiniMax H3 References"
+requires-comfyui = ">=0.32.0"

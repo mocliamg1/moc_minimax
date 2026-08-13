@@ -1,0 +1,81 @@
+{
+  "1": {
+    "class_type": "EmptyImage",
+    "inputs": {
+      "width": 768,
+      "height": 768,
+      "batch_size": 1,
+      "color": 7353904
+    }
+  },
+  "2": {
+    "class_type": "MocH3ImageReference",
+    "inputs": {
+      "image": [
+        "1",
+        0
+      ],
+      "name": "hero",
+      "role": "identity",
+      "priority": "primary",
+      "signal_weight": 1.0,
+      "detail": "match_output",
+      "use_for": "",
+      "do_not_copy": ""
+    }
+  },
+  "3": {
+    "class_type": "EmptyImage",
+    "inputs": {
+      "width": 768,
+      "height": 768,
+      "batch_size": 1,
+      "color": 2642040
+    }
+  },
+  "4": {
+    "class_type": "MocH3ImageReference",
+    "inputs": {
+      "image": [
+        "3",
+        0
+      ],
+      "name": "look",
+      "role": "style",
+      "priority": "weak",
+      "signal_weight": 1.0,
+      "detail": "match_output",
+      "use_for": "palette, contrast, and lighting character",
+      "do_not_copy": "the person, pose, composition, or background"
+    }
+  },
+  "5": {
+    "class_type": "MocH3ReferenceSet",
+    "inputs": {
+      "references.reference_0": [
+        "2",
+        0
+      ],
+      "references.reference_1": [
+        "4",
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "MocH3CompileReferencePrompt",
+    "inputs": {
+      "reference_set": [
+        "5",
+        0
+      ],
+      "prompt": "A cinematic portrait of @hero in a rainy alley. Borrow a subtle teal-and-amber palette from @look.",
+      "prompt_mode": "guided",
+      "validation_mode": "warn",
+      "width": 1344,
+      "height": 768,
+      "length": 124,
+      "default_image_detail": "match_output"
+    }
+  }
+}
