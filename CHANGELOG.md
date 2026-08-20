@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 — 2026-08-21
+
+- Added a separate Image + References to Video node with optional temporal first/last-frame anchors and independent non-temporal references.
+- Kept temporal anchors in `minimax_keyframes` and reference media in `minimax_refs` so neither changes the other's role or numbering.
+- Updated experimental reference-span weighting to skip temporal condition rows in hybrid packed layouts.
+
 ## 0.2.0 — 2026-08-13
 
 - Added optional per-image source-isolation masks without changing native H3 or existing node outputs.

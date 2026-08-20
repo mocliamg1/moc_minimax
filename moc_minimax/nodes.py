@@ -932,6 +932,55 @@ def _native_inputs(plan: ReferencePlan, width: int, height: int, length: int, de
     return native_image_size, image_inputs, video_inputs, video_audio_inputs, audio_inputs, controls
 
 
+def _resize_temporal_frame(image: torch.Tensor, width: int, height: int, crop: str) -> torch.Tensor:
+    """Match the native FL2VA first/last-frame resize policy."""
+    import comfy.utils
+
+    samples = image[:1, ..., :3].movedim(-1, 1)
+    return comfy.utils.common_upscale(samples, width, height, "lanczos", crop).movedim(1, -1)
+
+
+def _prepare_temporal_keyframes(
+    vae,
+    width: int,
+    height: int,
+    length: int,
+    first_frame: torch.Tensor | None = None,
+    last_frame: torch.Tensor | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Encode temporal anchors separately from the non-temporal reference bank."""
+    frame_count = _resolved_target_frames(length)
+    keyframes: list[dict[str, Any]] = []
+    summary: list[dict[str, Any]] = []
+    if first_frame is not None:
+        image = _resize_temporal_frame(first_frame, width, height, "disabled")
+        keyframes.append({"resolved_frame_index": 0, "latent": vae.encode(image)})
+        summary.append({"position": "first", "resolved_frame_index": 0})
+    if last_frame is not None:
+        image = _resize_temporal_frame(last_frame, width, height, "center")
+        keyframes.append({"resolved_frame_index": frame_count - 1, "latent": vae.encode(image)})
+        summary.append({"position": "last", "resolved_frame_index": frame_count - 1})
+    return keyframes, summary
+
+
+def _attach_temporal_keyframes(conditioning, keyframes, summary, frame_count: int):
+    if not keyframes:
+        return conditioning
+    output = []
+    for entry in conditioning:
+        embedding, metadata = entry[0], dict(entry[1])
+        metadata["minimax_keyframes"] = [*metadata.get("minimax_keyframes", []), *keyframes]
+        # Retained for compatibility with ComfyUI builds whose H3 payload uses
+        # the explicit pixel-frame count when resolving the final anchor.
+        metadata["minimax_frame_count"] = int(frame_count)
+        metadata["moc_h3_temporal_guides"] = [dict(item) for item in summary]
+        copied_entry = list(entry)
+        copied_entry[0] = embedding
+        copied_entry[1] = metadata
+        output.append(copied_entry)
+    return output
+
+
 def _annotate_conditioning(
     conditioning,
     controls: list[dict[str, Any]],
@@ -1145,6 +1194,137 @@ class MocH3ReferenceToVideoPlusNode(io.ComfyNode):
         )
 
 
+class MocH3HybridImageReferencesToVideoNode(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="MocH3HybridImageReferencesToVideo",
+            display_name="MOC • H3 Image + References to Video",
+            category=CATEGORY,
+            description=(
+                "Combine FL2VA-style temporal first/last images with an independent non-temporal MOC reference bank. "
+                "Temporal images become keyframes; reference images, videos, and audio remain native H3 references."
+            ),
+            inputs=[
+                io.Clip.Input("clip"),
+                io.Vae.Input("vae"),
+                io.Vae.Input("audio_vae"),
+                MocH3ReferenceSet.Input("reference_set"),
+                io.Image.Input(
+                    "first_frame",
+                    optional=True,
+                    tooltip="Temporal anchor fixed to output frame 0. It is not added to the non-temporal reference bank.",
+                ),
+                io.Image.Input(
+                    "last_frame",
+                    optional=True,
+                    tooltip="Temporal anchor fixed to the final output frame. It is not added to the non-temporal reference bank.",
+                ),
+                io.String.Input("prompt", multiline=True, dynamic_prompts=True),
+                io.Int.Input("width", default=1344, min=32, max=16384, step=32),
+                io.Int.Input("height", default=768, min=32, max=16384, step=32),
+                io.Int.Input("length", default=124, min=5, max=3600, step=17),
+                io.Combo.Input("prompt_mode", options=list(PROMPT_MODES), default="guided"),
+                io.Combo.Input("validation_mode", options=list(VALIDATION_MODES), default="warn"),
+                io.Combo.Input(
+                    "default_image_detail",
+                    options=["match_output", "high_2048"],
+                    default="match_output",
+                    tooltip="Default for non-temporal image references whose detail setting is inherit.",
+                ),
+                io.Float.Input(
+                    "visual_reference_fidelity",
+                    default=0.999,
+                    min=0.0,
+                    max=1.0,
+                    step=0.001,
+                    advanced=True,
+                    tooltip="Global visual condition fidelity for direct temporal and reference latents.",
+                ),
+                io.Float.Input(
+                    "audio_reference_fidelity",
+                    default=1.0,
+                    min=0.0,
+                    max=1.0,
+                    step=0.001,
+                    advanced=True,
+                    tooltip="Global audio condition fidelity for direct reference latents.",
+                ),
+            ],
+            outputs=[
+                io.Conditioning.Output("positive"),
+                io.Latent.Output("latent"),
+                io.String.Output("compiled_prompt"),
+                io.String.Output("report"),
+                io.String.Output("manifest_json"),
+            ],
+        )
+
+    @classmethod
+    def execute(
+        cls,
+        clip,
+        vae,
+        audio_vae,
+        reference_set,
+        prompt,
+        width,
+        height,
+        length,
+        prompt_mode,
+        validation_mode,
+        default_image_detail,
+        visual_reference_fidelity,
+        audio_reference_fidelity,
+        first_frame=None,
+        last_frame=None,
+    ):
+        base_result = MocH3ReferenceToVideoPlusNode.execute(
+            clip,
+            vae,
+            audio_vae,
+            reference_set,
+            prompt,
+            width,
+            height,
+            length,
+            prompt_mode,
+            validation_mode,
+            default_image_detail,
+            visual_reference_fidelity,
+            audio_reference_fidelity,
+        )
+        conditioning, latent, compiled, report, manifest = _node_output_values(base_result)[:5]
+        keyframes, temporal_summary = _prepare_temporal_keyframes(
+            vae,
+            width,
+            height,
+            length,
+            first_frame=first_frame,
+            last_frame=last_frame,
+        )
+        conditioning = _attach_temporal_keyframes(
+            conditioning,
+            keyframes,
+            temporal_summary,
+            _resolved_target_frames(length),
+        )
+        if temporal_summary:
+            guide_lines = [
+                f"- {item['position']}: frame {item['resolved_frame_index']}"
+                for item in temporal_summary
+            ]
+            report += "\n\nTemporal guides\n" + "\n".join(guide_lines)
+        return io.NodeOutput(
+            conditioning,
+            latent,
+            compiled,
+            report,
+            manifest,
+            ui=ui.PreviewText(report),
+        )
+
+
 class MocH3ApplyReferenceWeightsNode(io.ComfyNode):
     @classmethod
     def define_schema(cls):
@@ -1201,5 +1381,6 @@ class MocH3Extension(ComfyExtension):
             MocH3ReferenceSetNode,
             MocH3CompilePromptNode,
             MocH3ReferenceToVideoPlusNode,
+            MocH3HybridImageReferencesToVideoNode,
             MocH3ApplyReferenceWeightsNode,
         ]

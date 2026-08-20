@@ -30,6 +30,10 @@ def reference_spans(layout_segments: Iterable[tuple[int, int, str]], refs: Itera
     """Map H3 reference records to their packed visual/audio token spans."""
     segments = list(layout_segments)
     cursor = 1 if segments and segments[0][2] == "text" else 0
+    # Hybrid H3 layouts place temporal keyframe rows before the non-temporal
+    # reference bank. They are anchors, not weighted reference records.
+    while cursor < len(segments) and segments[cursor][2] in ("cond", "cond_audio"):
+        cursor += 1
     spans: list[WeightedSpan] = []
 
     def take(expected: str, alias: str) -> tuple[int, int, str]:

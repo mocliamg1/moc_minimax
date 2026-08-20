@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 try:
     import torch
@@ -16,15 +17,46 @@ if torch is not None and comfy_api is not None:
     from moc_minimax.core import make_reference, plan_references
     from moc_minimax.nodes import (
         MocH3ImageReferenceNode,
+        _attach_temporal_keyframes,
         _limit_diagnostics,
         _native_inputs,
         _native_video_frame_count,
+        _prepare_temporal_keyframes,
         _resolved_target_frames,
     )
 
 
 @unittest.skipIf(torch is None or comfy_api is None, "torch/ComfyUI is not installed in this test environment")
 class NativePreparationTests(unittest.TestCase):
+    def test_temporal_keyframes_coexist_with_non_temporal_refs(self):
+        class FakeVae:
+            @staticmethod
+            def encode(image):
+                return image.movedim(-1, 1)
+
+        image = torch.ones((1, 8, 8, 3))
+        crops = []
+
+        def fake_upscale(samples, width, height, method, crop):
+            self.assertEqual((width, height, method), (8, 8, "lanczos"))
+            crops.append(crop)
+            return samples
+
+        with mock.patch("comfy.utils.common_upscale", side_effect=fake_upscale):
+            keyframes, summary = _prepare_temporal_keyframes(
+                FakeVae(), 8, 8, 22, first_frame=image, last_frame=image
+            )
+
+        self.assertEqual(crops, ["disabled", "center"])
+        self.assertEqual([item["resolved_frame_index"] for item in keyframes], [0, 21])
+        conditioning = [[object(), {"minimax_refs": [{"kind": "image"}]}]]
+        combined = _attach_temporal_keyframes(conditioning, keyframes, summary, 22)
+        metadata = combined[0][1]
+        self.assertEqual(metadata["minimax_refs"], [{"kind": "image"}])
+        self.assertEqual([item["resolved_frame_index"] for item in metadata["minimax_keyframes"]], [0, 21])
+        self.assertEqual(metadata["minimax_frame_count"], 22)
+        self.assertEqual(metadata["moc_h3_temporal_guides"], summary)
+
     def test_masked_builder_tensor_is_the_native_reference_image(self):
         image = torch.ones((1, 8, 8, 3))
         mask = torch.zeros((1, 8, 8))

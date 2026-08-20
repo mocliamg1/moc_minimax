@@ -70,6 +70,8 @@ Restart ComfyUI. The nodes appear under **MiniMax H3 → MOC References**.
 6. Replace only the official workflow's native authoring node with `MOC • H3 Reference to Video+`. Connect the same H3 CLIP, video VAE, and audio VAE.
 7. Connect its first two outputs where the native node's `positive` and `latent` outputs were connected.
 
+When the shot also needs temporal first/last images, use `MOC • H3 Image + References to Video` instead. Its temporal sockets do not replace or renumber the independent Reference Set.
+
 The first two outputs deliberately match the native node's order:
 
 1. `positive` — `CONDITIONING`
@@ -202,6 +204,12 @@ Use the same `default_image_detail`, width, height, and length here as on the ma
 ### MOC • H3 Reference to Video+
 
 The main replacement node delegates image/video/audio encoding and latent creation to ComfyUI's native `MiniMaxH3ReferenceToVideo`, then attaches copied per-reference metadata to the returned conditioning.
+
+### MOC • H3 Image + References to Video
+
+This separate hybrid node adds optional FL2VA-style `first_frame` and `last_frame` temporal anchors alongside the same independent MOC reference set. The first image is fixed to frame 0 and the last image to the resolved final frame. Temporal images are stored in `minimax_keyframes`; non-temporal image, video, and audio references remain in `minimax_refs` and keep their normal `<Picture N>`, `<Video N>`, and `<Audio N>` numbering.
+
+This hybrid path deliberately keeps `minimax_keyframes` and `minimax_refs` separate in the conditioning payload. Use a current ComfyUI build whose MiniMax H3 packed layout accepts both together.
 
 The main node enforces validation:
 

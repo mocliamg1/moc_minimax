@@ -1,6 +1,6 @@
 [project]
 name = "moc-minimax-h3-references"
-version = "0.2.0"
+version = "0.3.0"
 description = "Feature-rich MiniMax H3 reference conditioning for ComfyUI with aliases, per-image masks, diagnostics, and experimental signal weights."
 readme = "README.md"
 requires-python = ">=3.10"

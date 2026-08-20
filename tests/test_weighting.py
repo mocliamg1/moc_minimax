@@ -19,6 +19,18 @@ if torch is not None:
 
 
 class PackedSpanTests(unittest.TestCase):
+    def test_hybrid_keyframe_rows_are_skipped_before_references(self):
+        segments = [
+            (0, 2, "text"),
+            (2, 6, "cond"),
+            (6, 10, "cond_audio"),
+            (10, 14, "ref_img"),
+            (14, 18, "audio"),
+            (18, 22, "video"),
+        ]
+        spans = reference_spans(segments, [{"kind": "image", "name": "look"}])
+        self.assertEqual([(span.start, span.stop, span.alias) for span in spans], [(10, 14, "look")])
+
     def test_mixed_reference_span_mapping(self):
         segments = [
             (0, 10, "text"),
