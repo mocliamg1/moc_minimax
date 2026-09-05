@@ -70,7 +70,7 @@ Restart ComfyUI. The nodes appear under **MiniMax H3 → MOC References**.
 6. Replace only the official workflow's native authoring node with `MOC • H3 Reference to Video+`. Connect the same H3 CLIP, video VAE, and audio VAE.
 7. Connect its first two outputs where the native node's `positive` and `latent` outputs were connected.
 
-When the shot also needs temporal first/last images, use `MOC • H3 Image + References to Video` instead. Its temporal sockets do not replace or renumber the independent Reference Set.
+When the shot also needs temporal first/last images plus independent reference images, use `MOC • H3 Image to Video + References` instead. It preserves the native Image to Video inputs and adds autogrowing ordinary `IMAGE` reference sockets.
 
 The first two outputs deliberately match the native node's order:
 
@@ -205,11 +205,11 @@ Use the same `default_image_detail`, width, height, and length here as on the ma
 
 The main replacement node delegates image/video/audio encoding and latent creation to ComfyUI's native `MiniMaxH3ReferenceToVideo`, then attaches copied per-reference metadata to the returned conditioning.
 
-### MOC • H3 Image + References to Video
+### MOC • H3 Image to Video + References
 
-This separate hybrid node adds optional FL2VA-style `first_frame` and `last_frame` temporal anchors alongside the same independent MOC reference set. The first image is fixed to frame 0 and the last image to the resolved final frame. Temporal images are stored in `minimax_keyframes`; non-temporal image, video, and audio references remain in `minimax_refs` and keep their normal `<Picture N>`, `<Video N>`, and `<Audio N>` numbering.
+This separate hybrid node starts with the default MiniMax H3 Image to Video inputs—`clip`, `vae`, `prompt`, `width`, `height`, `length`, `first_frame`, and `last_frame`—then adds up to nine autogrowing standard `IMAGE` reference inputs. It does not require MOC reference builders, a Reference Set, or an audio VAE. The first image is fixed to frame 0 and the last image to the resolved final frame. Temporal images are stored in `minimax_keyframes`; the additional images remain non-temporal `minimax_refs`.
 
-This hybrid path deliberately keeps `minimax_keyframes` and `minimax_refs` separate in the conditioning payload. Use a current ComfyUI build whose MiniMax H3 packed layout accepts both together.
+The node's two outputs match the default node: `positive` and `latent`. Its prompt can address the additional references as `<Picture 1>`, `<Picture 2>`, and so on. Use a current ComfyUI build whose MiniMax H3 packed layout accepts `minimax_keyframes` and `minimax_refs` together.
 
 The main node enforces validation:
 
@@ -297,3 +297,38 @@ python scripts/validate_comfy.py /path/to/ComfyUI
 ## License
 
 MIT. MiniMax H3 model weights have their own license; this repository does not redistribute them.
+
+## Compare MiniMax H3 LoRAs
+
+Under **MiniMax H3 → MOC LoRA**, connect two **MOC • H3 Load LoRA** nodes to **MOC • H3 Compare LoRAs**. Each loader selects a file from ComfyUI's configured LoRA folders and loads it safely on CPU. No base model or GPU is needed. Replacing a file invalidates the loader cache using its path, size, timestamps, and inode.
+
+The comparison displays a readable report inline and returns `report` and `report_json` as STRING outputs. The JSON is serialized text, not a custom dictionary socket. Load [the example workflow](example_workflows/minimax_h3_lora_compare.json) and select your two actual LoRA files; an [API example](examples/minimax_h3_lora_compare_api.json) is also included.
+
+Comparison supports standard two-dimensional LoRA up/down and A/B pairs (including `.default.weight`), direct or decomposed linear LoKr factors, and full weight-difference adapters (`.diff`). `matching=strict` (default) requires identical normalized target layers, adapter formats, ranks, and factor shapes. `matching=effective_dimensions` allows different formats, ranks, and Kronecker partitions, while requiring identical target layers and effective weight dimensions. Use this mode to compare a compressed merge with its full-difference reference. Incompatible files return diagnostics, `compatible: false`, and `score: null`. Recognized `base_model.model.`, `model.diffusion_model.`, and `diffusion_model.` wrappers are removed; architectural names are not guessed or remapped. DoRA, Tucker/convolutional adapters, unknown weight entries, malformed pairs, and nonfinite values are rejected explicitly.
+
+Scores compare effective updates at strength 1. LoRA uses `ΔW = (alpha / rank) × B × A`, with missing alpha defaulting to rank. LoKr reconstructs `ΔW = scale × kron(W1, W2)` using ComfyUI's additive weight-patch scaling: alpha is divided by the rank of the last decomposed factor (W2 when both are decomposed); missing alpha means scale 1. When both factors are stored directly, alpha is ignored. These decisions are recorded per module. The magnitude-sensitive score is `100 × (1 − ||X−Y||² / (||X||+||Y||)²)`: identical updates score 100, opposite updates score 0, and doubling an update scores about 88.89. Two zero updates score 100; comparing zero with nonzero scores 0. Cosine similarity is also reported, or null for a zero norm. **These are weight-update similarities and do not predict visual similarity.**
+
+Overall and block metrics aggregate squared norms and inner products before scoring. CPU float64 Gram calculations handle LoRA pairs; Kronecker inner-product identities handle LoKr pairs with matching partitions. Other format combinations compare bounded row chunks without retaining full model updates. A module differs when `||X−Y|| > 1e-8 + 1e-5 × max(||X||, ||Y||)`; a block differs if any of its modules does. Reports retain full block-family paths, list differing blocks first by lowest score, and include non-block modules separately. JSON schema version 1 includes sources, compatibility, metric definition, overall/block/module metrics, alpha defaults, tolerances, and diagnostics.
+
+
+## Merge LoRA / LoKr checkpoints
+
+Connect two to eight **MOC • H3 Load LoRA** outputs to **MOC • H3 Merge LoRA / LoKr**. Set each `strength_a` … `strength_h` to the value you use in your working stack. Strengths are summed without normalization; zero excludes an input. Different internal ranks and adapter formats are allowed. Shared target layers must have identical effective weight dimensions, and layers present in only some inputs are preserved. This handles additive linear LoRA/LoKr updates, not full base-model checkpoints or DoRA.
+
+The node writes a numbered `.safetensors` file under `ComfyUI/output/loras/` by default. It returns a connected adapter object, readable report, JSON text report, and the saved path. Existing files are never overwritten, and failed merges do not publish a partial safetensors file. The saved file includes source names, input strengths, format, and per-module error information in its metadata.
+
+Three export choices are available:
+
+| `output_format` | Behavior |
+|---|---|
+| `full_diff` (default) | Sum effective updates and save native ComfyUI `.diff` tensors. Preserves the weighted sum within storage precision, but can produce a very large file. |
+| `lokr_shared_or_diff` | Keep a compact LoKr representation when all contributors to a layer have an exactly identical reconstructed W1 or W2 with matching partitions. Fold strengths and alpha scales into the other factor. Fall back to `.diff` for other layers. No approximate factor averaging. |
+| `lora_svd` | Approximate each merged layer with a standard LoRA using the selected `rank`, capped by its weight dimensions. CPU SVD can be slow and require substantial memory on large layers. |
+
+`storage_dtype` defaults to float32; float16 and bfloat16 are optional. Error reports measure the exported tensors **after** storage conversion against the requested weighted sum, so they include rounding as well as SVD truncation. Overall and per-block relative errors are Frobenius difference norms divided by reference-update norms; non-block modules have their own group. Low weight error does not guarantee unchanged generations.
+
+Merging and export process one layer at a time. Tensor bytes are spooled to disk and published as one file, so the exporter does not retain a full dense MiniMax delta in RAM. Full-difference export still needs space for both the spool and final staging file (roughly twice the output size during writing), plus memory for the largest layer and its working tensors. The returned adapter maps the saved safetensors file on CPU.
+
+Move or copy the saved file into a configured ComfyUI LoRA folder to use it with a native LoRA loader, and **apply the merged adapter at strength 1.0**: the original strengths are already baked in. Keep the same base model and sampling settings when comparing the merge with your original stack; floating-point application order can cause differences. Architecture-specific layer names are preserved; this does not translate between different model architectures.
+
+Load [the three-checkpoint merge workflow](example_workflows/minimax_h3_lokr_merge.json), or use [the API example](examples/minimax_h3_lokr_merge_api.json). Replace placeholder filenames and sample strengths with your actual settings. To evaluate compression, make one `full_diff` merge and one `lora_svd` merge with identical inputs/strengths, then connect their adapter outputs to Compare with `matching=effective_dimensions`.

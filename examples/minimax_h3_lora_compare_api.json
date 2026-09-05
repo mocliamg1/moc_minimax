@@ -1,0 +1,27 @@
+{
+  "1": {
+    "class_type": "MocH3LoadLora",
+    "inputs": {
+      "lora_name": "first_lora.safetensors"
+    }
+  },
+  "2": {
+    "class_type": "MocH3LoadLora",
+    "inputs": {
+      "lora_name": "second_lora.safetensors"
+    }
+  },
+  "3": {
+    "class_type": "MocH3CompareLoras",
+    "inputs": {
+      "lora_a": [
+        "1",
+        0
+      ],
+      "lora_b": [
+        "2",
+        0
+      ]
+    }
+  }
+}

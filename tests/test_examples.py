@@ -9,6 +9,25 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ExampleArtifactTests(unittest.TestCase):
+    def test_lokr_merge_examples(self):
+        graph = json.loads((ROOT / "examples/minimax_h3_lokr_merge_api.json").read_text())
+        merge = graph["4"]
+        self.assertEqual(merge["class_type"], "MocH3MergeLoras")
+        self.assertEqual([merge["inputs"]["strength_" + letter] for letter in "abc"], [.7, .5, .3])
+        workflow = json.loads((ROOT / "example_workflows/minimax_h3_lokr_merge.json").read_text())
+        self.assertEqual(workflow["nodes"][-1]["type"], "MocH3MergeLoras")
+        self.assertEqual(workflow["links"], [[i, i, 0, 4, i-1, "MOC_H3_LORA"] for i in (1, 2, 3)])
+        self.assertEqual(workflow["nodes"][-1]["widgets_values"][-4:],
+                         ["full_diff", 64, "float32", "loras/moc_minimax_merge"])
+
+    def test_lora_comparison_examples(self):
+        graph = json.loads((ROOT / "examples/minimax_h3_lora_compare_api.json").read_text())
+        self.assertEqual(graph["3"]["inputs"], {"lora_a": ["1", 0], "lora_b": ["2", 0]})
+        workflow = json.loads((ROOT / "example_workflows/minimax_h3_lora_compare.json").read_text())
+        self.assertEqual([n["type"] for n in workflow["nodes"]],
+                         ["MocH3LoadLora", "MocH3LoadLora", "MocH3CompareLoras"])
+        self.assertEqual(workflow["links"], [[1, 1, 0, 3, 0, "MOC_H3_LORA"], [2, 2, 0, 3, 1, "MOC_H3_LORA"]])
+
     def test_api_example_is_a_clean_prompt_graph(self):
         graph = json.loads((ROOT / "examples" / "minimax_h3_reference_plus_api.json").read_text())
         self.assertTrue(graph)

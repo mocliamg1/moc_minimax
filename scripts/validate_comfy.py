@@ -240,6 +240,27 @@ def main() -> int:
     # boundary without loading any H3 checkpoints.
     import torch
 
+    smoke_lora = {"source": "synthetic", "tensors": {
+        "blocks.0.attn.q.lora_A.weight": torch.ones((2, 4)),
+        "blocks.0.attn.q.lora_B.weight": torch.ones((4, 2)),
+    }}
+    comparison = _result(by_id["MocH3CompareLoras"].execute(smoke_lora, smoke_lora))
+    comparison_data = json.loads(comparison[1])
+    if not comparison_data["compatible"] or comparison_data["score"] != 100.0:
+        raise RuntimeError("LoRA comparison smoke test failed")
+    print("ok  execution smoke: identical LoRA comparison")
+    lora_module = sys.modules[f"{package_name}.moc_minimax.lora_nodes"]
+    smoke_lokr = {"source": "synthetic LoKr", "tensors": {
+        "diffusion_model.blocks.0.attn.q.lokr_w1": torch.ones((2, 2)),
+        "diffusion_model.blocks.0.attn.q.lokr_w2": torch.ones((2, 2)),
+    }}
+    merged_lokr, merge_report = lora_module.merge_adapters([smoke_lokr, smoke_lokr], [.7, .3])
+    lokr_comparison = _result(by_id["MocH3CompareLoras"].execute(
+        smoke_lokr, merged_lokr, matching="effective_dimensions"))
+    if json.loads(lokr_comparison[1])["score"] != 100.0 or merge_report["overall"]["relative_error"] != 0.0:
+        raise RuntimeError("LoKr merge/comparison smoke test failed")
+    print("ok  execution smoke: LoKr merge and cross-format comparison")
+
     smoke_image = torch.ones((1, 32, 32, 3))
     smoke_mask = torch.zeros((1, 32, 32))
     smoke_mask[:, 8:24, 8:24] = 1.0
@@ -351,7 +372,30 @@ def main() -> int:
         raise RuntimeError("conditioning metadata and manifest output disagree")
     if main_values[1].get("samples") != "smoke":
         raise RuntimeError("main-node native delegation smoke test failed")
-    print("ok  execution smoke: builder -> set -> compiler -> native NodeOutput/metadata delegation")
+
+    native_call.clear()
+    try:
+        nodes_module._native_node_class = lambda: FakeNative
+        hybrid_output = by_id["MocH3HybridImageReferencesToVideo"].execute(
+            object(),
+            object(),
+            "A portrait using <Picture 1> as a non-temporal reference.",
+            1344,
+            768,
+            124,
+            "match",
+            reference_images={"reference_image_0": smoke_image},
+        )
+    finally:
+        nodes_module._native_node_class = original_native_factory
+    hybrid_values = _result(hybrid_output)
+    if not isinstance(hybrid_values, tuple) or len(hybrid_values) != 2:
+        raise RuntimeError("hybrid Image to Video node did not preserve the native two-output boundary")
+    if list(native_call.get("kwargs", {}).get("ref_images", {})) != ["ref_image_0"]:
+        raise RuntimeError(f"hybrid node did not delegate its ordinary IMAGE reference input: {native_call!r}")
+    if not torch.equal(native_call["kwargs"]["ref_images"]["ref_image_0"], smoke_image):
+        raise RuntimeError("hybrid node changed the direct IMAGE reference before native H3 delegation")
+    print("ok  execution smoke: MOC reference and direct-IMAGE hybrid native delegation")
     return 0
 
 

@@ -1,0 +1,44 @@
+{
+  "1": {
+    "class_type": "MocH3LoadLora",
+    "inputs": {
+      "lora_name": "checkpoint_1.safetensors"
+    }
+  },
+  "2": {
+    "class_type": "MocH3LoadLora",
+    "inputs": {
+      "lora_name": "checkpoint_2.safetensors"
+    }
+  },
+  "3": {
+    "class_type": "MocH3LoadLora",
+    "inputs": {
+      "lora_name": "checkpoint_3.safetensors"
+    }
+  },
+  "4": {
+    "class_type": "MocH3MergeLoras",
+    "inputs": {
+      "lora_a": [
+        "1",
+        0
+      ],
+      "strength_a": 0.7,
+      "lora_b": [
+        "2",
+        0
+      ],
+      "strength_b": 0.5,
+      "lora_c": [
+        "3",
+        0
+      ],
+      "strength_c": 0.3,
+      "output_format": "full_diff",
+      "rank": 64,
+      "storage_dtype": "float32",
+      "filename_prefix": "loras/moc_minimax_merge"
+    }
+  }
+}

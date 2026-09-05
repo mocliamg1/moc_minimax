@@ -40,6 +40,7 @@ from .media import (
     trim_audio_to_duration,
 )
 from .weighting import install_reference_weight_patch
+from .lora_nodes import MocH3LoadLoraNode, MocH3CompareLorasNode, MocH3MergeLorasNode
 
 
 CATEGORY = "MiniMax H3/MOC References"
@@ -1199,64 +1200,61 @@ class MocH3HybridImageReferencesToVideoNode(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="MocH3HybridImageReferencesToVideo",
-            display_name="MOC • H3 Image + References to Video",
+            display_name="MOC • H3 Image to Video + References",
             category=CATEGORY,
             description=(
-                "Combine FL2VA-style temporal first/last images with an independent non-temporal MOC reference bank. "
-                "Temporal images become keyframes; reference images, videos, and audio remain native H3 references."
+                "The native MiniMax H3 Image to Video interface plus ordinary IMAGE inputs for independent, "
+                "non-temporal references. First/last images remain temporal keyframes."
             ),
             inputs=[
                 io.Clip.Input("clip"),
                 io.Vae.Input("vae"),
-                io.Vae.Input("audio_vae"),
-                MocH3ReferenceSet.Input("reference_set"),
-                io.Image.Input(
-                    "first_frame",
-                    optional=True,
-                    tooltip="Temporal anchor fixed to output frame 0. It is not added to the non-temporal reference bank.",
-                ),
-                io.Image.Input(
-                    "last_frame",
-                    optional=True,
-                    tooltip="Temporal anchor fixed to the final output frame. It is not added to the non-temporal reference bank.",
-                ),
                 io.String.Input("prompt", multiline=True, dynamic_prompts=True),
                 io.Int.Input("width", default=1344, min=32, max=16384, step=32),
                 io.Int.Input("height", default=768, min=32, max=16384, step=32),
                 io.Int.Input("length", default=124, min=5, max=3600, step=17),
-                io.Combo.Input("prompt_mode", options=list(PROMPT_MODES), default="guided"),
-                io.Combo.Input("validation_mode", options=list(VALIDATION_MODES), default="warn"),
+                io.Image.Input(
+                    "first_frame",
+                    optional=True,
+                    tooltip=(
+                        "Native Image to Video first-frame input. The first image in the batch is stretched to the "
+                        "output canvas and fixed to frame 0; it is not added to the reference bank."
+                    ),
+                ),
+                io.Image.Input(
+                    "last_frame",
+                    optional=True,
+                    tooltip=(
+                        "Native Image to Video last-frame input. The first image in the batch is cover-cropped and "
+                        "fixed to the final frame; it is not added to the reference bank."
+                    ),
+                ),
                 io.Combo.Input(
-                    "default_image_detail",
-                    options=["match_output", "high_2048"],
-                    default="match_output",
-                    tooltip="Default for non-temporal image references whose detail setting is inherit.",
+                    "ref_image_size",
+                    options=["match", "max"],
+                    default="match",
+                    tooltip=(
+                        "Reference sizing passed to native H3. 'match' limits each reference to the output pixel area; "
+                        "'max' retains up to the native 2048px short-edge reference canvas."
+                    ),
                 ),
-                io.Float.Input(
-                    "visual_reference_fidelity",
-                    default=0.999,
-                    min=0.0,
-                    max=1.0,
-                    step=0.001,
-                    advanced=True,
-                    tooltip="Global visual condition fidelity for direct temporal and reference latents.",
-                ),
-                io.Float.Input(
-                    "audio_reference_fidelity",
-                    default=1.0,
-                    min=0.0,
-                    max=1.0,
-                    step=0.001,
-                    advanced=True,
-                    tooltip="Global audio condition fidelity for direct reference latents.",
+                io.Autogrow.Input(
+                    "reference_images",
+                    optional=True,
+                    template=io.Autogrow.TemplatePrefix(
+                        input=io.Image.Input(
+                            "reference_image",
+                            tooltip="Ordinary IMAGE input used as a non-temporal H3 reference, not as an output frame.",
+                        ),
+                        prefix="reference_image_",
+                        min=0,
+                        max=9,
+                    ),
                 ),
             ],
             outputs=[
                 io.Conditioning.Output("positive"),
                 io.Latent.Output("latent"),
-                io.String.Output("compiled_prompt"),
-                io.String.Output("report"),
-                io.String.Output("manifest_json"),
             ],
         )
 
@@ -1265,36 +1263,37 @@ class MocH3HybridImageReferencesToVideoNode(io.ComfyNode):
         cls,
         clip,
         vae,
-        audio_vae,
-        reference_set,
         prompt,
         width,
         height,
         length,
-        prompt_mode,
-        validation_mode,
-        default_image_detail,
-        visual_reference_fidelity,
-        audio_reference_fidelity,
+        ref_image_size,
         first_frame=None,
         last_frame=None,
+        reference_images=None,
     ):
-        base_result = MocH3ReferenceToVideoPlusNode.execute(
+        refs = {
+            f"ref_image_{index}": image
+            for index, image in enumerate(
+                value for value in (reference_images or {}).values() if value is not None
+            )
+        }
+        native = _native_node_class()
+        native_result = native.execute(
             clip,
             vae,
-            audio_vae,
-            reference_set,
+            vae,  # The native signature requires audio_vae; image-only references never use it.
             prompt,
             width,
             height,
             length,
-            prompt_mode,
-            validation_mode,
-            default_image_detail,
-            visual_reference_fidelity,
-            audio_reference_fidelity,
+            ref_image_size=ref_image_size,
+            ref_images=refs,
+            ref_videos={},
+            ref_video_audios={},
+            ref_audios={},
         )
-        conditioning, latent, compiled, report, manifest = _node_output_values(base_result)[:5]
+        conditioning, latent = _node_output_values(native_result)[:2]
         keyframes, temporal_summary = _prepare_temporal_keyframes(
             vae,
             width,
@@ -1309,20 +1308,7 @@ class MocH3HybridImageReferencesToVideoNode(io.ComfyNode):
             temporal_summary,
             _resolved_target_frames(length),
         )
-        if temporal_summary:
-            guide_lines = [
-                f"- {item['position']}: frame {item['resolved_frame_index']}"
-                for item in temporal_summary
-            ]
-            report += "\n\nTemporal guides\n" + "\n".join(guide_lines)
-        return io.NodeOutput(
-            conditioning,
-            latent,
-            compiled,
-            report,
-            manifest,
-            ui=ui.PreviewText(report),
-        )
+        return io.NodeOutput(conditioning, latent)
 
 
 class MocH3ApplyReferenceWeightsNode(io.ComfyNode):
@@ -1375,6 +1361,9 @@ class MocH3ApplyReferenceWeightsNode(io.ComfyNode):
 class MocH3Extension(ComfyExtension):
     async def get_node_list(self):
         return [
+            MocH3LoadLoraNode,
+            MocH3CompareLorasNode,
+            MocH3MergeLorasNode,
             MocH3ImageReferenceNode,
             MocH3VideoReferenceNode,
             MocH3AudioReferenceNode,

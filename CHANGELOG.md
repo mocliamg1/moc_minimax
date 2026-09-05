@@ -1,8 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Added linear LoKr and full-difference comparison, including effective-dimension matching across adapter formats and ranks.
+- Added weighted LoRA/LoKr merge with streamed safetensors export, exact shared-factor LoKr retention, optional SVD compression, and per-block storage/compression error reports.
+
+- Added CPU LoRA loader and effective-weight comparison nodes with strict dimension/rank matching, per-block differences, inline text, and JSON text reports.
+- Added file-change cache invalidation, comparison tests, and two-loader example workflows.
+
 ## 0.3.0 — 2026-08-21
 
-- Added a separate Image + References to Video node with optional temporal first/last-frame anchors and independent non-temporal references.
+- Added a separate Image to Video + References node that preserves the native Image to Video interface and adds autogrowing standard `IMAGE` sockets for non-temporal references.
 - Kept temporal anchors in `minimax_keyframes` and reference media in `minimax_refs` so neither changes the other's role or numbering.
 - Updated experimental reference-span weighting to skip temporal condition rows in hybrid packed layouts.
 
