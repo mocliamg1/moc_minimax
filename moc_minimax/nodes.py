@@ -1025,7 +1025,7 @@ def _annotate_conditioning(
     return output
 
 
-def _native_node_class():
+def _native_node_class(node_name="MiniMaxH3ReferenceToVideo"):
     try:
         module = importlib.import_module("comfy_extras.nodes_minimax_h3")
     except ModuleNotFoundError as exc:
@@ -1036,15 +1036,18 @@ def _native_node_class():
         raise RuntimeError(
             "MOC MiniMax requires native MiniMax H3 support from ComfyUI 0.32.0 or newer. Update ComfyUI first."
         ) from exc
-    native = getattr(module, "MiniMaxH3ReferenceToVideo", None)
+    native = getattr(module, node_name, None)
     if native is None:
         raise RuntimeError(
-            "This ComfyUI build does not expose MiniMaxH3ReferenceToVideo. Update ComfyUI to a compatible release."
+            f"This ComfyUI build does not expose {node_name}. Update ComfyUI to a compatible release."
         )
-    required = {
-        "clip", "vae", "audio_vae", "prompt", "width", "height", "length",
-        "ref_image_size", "ref_images", "ref_videos", "ref_video_audios", "ref_audios",
-    }
+    required = {"clip", "vae", "prompt", "width", "height", "length"}
+    if node_name == "MiniMaxH3ImageToVideo":
+        required.update({"first_frame", "last_frame"})
+    else:
+        required.update({
+            "audio_vae", "ref_image_size", "ref_images", "ref_videos", "ref_video_audios", "ref_audios",
+        })
     parameters = set(inspect.signature(native.execute).parameters)
     missing = sorted(required - parameters)
     if missing:
@@ -1162,13 +1165,13 @@ class MocH3ReferenceToVideoPlusNode(io.ComfyNode):
         )
         native = _native_node_class()
         result = native.execute(
-            clip,
-            vae,
-            audio_vae,
-            compiled,
-            width,
-            height,
-            length,
+            clip=clip,
+            vae=vae,
+            audio_vae=audio_vae,
+            prompt=compiled,
+            width=width,
+            height=height,
+            length=length,
             ref_image_size=native_size,
             ref_images=images,
             ref_videos=videos,
@@ -1280,13 +1283,13 @@ class MocH3HybridImageReferencesToVideoNode(io.ComfyNode):
         }
         native = _native_node_class()
         native_result = native.execute(
-            clip,
-            vae,
-            vae,  # The native signature requires audio_vae; image-only references never use it.
-            prompt,
-            width,
-            height,
-            length,
+            clip=clip,
+            vae=vae,
+            audio_vae=vae,  # Older native signatures require it; image-only references never use it.
+            prompt=prompt,
+            width=width,
+            height=height,
+            length=length,
             ref_image_size=ref_image_size,
             ref_images=refs,
             ref_videos={},
@@ -1309,6 +1312,71 @@ class MocH3HybridImageReferencesToVideoNode(io.ComfyNode):
             _resolved_target_frames(length),
         )
         return io.NodeOutput(conditioning, latent)
+
+
+class MocH3ImageToVideoSimpleNode(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="MocH3ImageToVideoSimple",
+            display_name="MOC • H3 Image to Video (Simple)",
+            category=CATEGORY,
+            description=(
+                "Stock H3 Image to Video controls with optional, autogrowing reference images. "
+                "Connect images directly; reference sizing is automatic. With no extra images, "
+                "runs the stock Image to Video node."
+            ),
+            inputs=[
+                io.Clip.Input("clip"),
+                io.Vae.Input("vae"),
+                io.String.Input("prompt", multiline=True, dynamic_prompts=True),
+                io.Int.Input("width", default=1344, min=32, max=16384, step=32),
+                io.Int.Input("height", default=768, min=32, max=16384, step=32),
+                io.Int.Input("length", default=124, min=5, max=3600, step=17),
+                io.Image.Input("first_frame", optional=True),
+                io.Image.Input("last_frame", optional=True),
+                io.Autogrow.Input(
+                    "reference_images",
+                    optional=True,
+                    template=io.Autogrow.TemplatePrefix(
+                        input=io.Image.Input(
+                            "reference_image",
+                            optional=True,
+                            tooltip=(
+                                "Extra reference image. Connecting it reveals another socket. "
+                                "Use <Picture 1>, <Picture 2>, etc. in the prompt."
+                            ),
+                        ),
+                        prefix="reference_image_",
+                        min=1,
+                        max=9,
+                    ),
+                ),
+            ],
+            outputs=[io.Conditioning.Output("positive"), io.Latent.Output("latent")],
+        )
+
+    @classmethod
+    def execute(
+        cls, clip, vae, prompt, width, height, length,
+        first_frame=None, last_frame=None, reference_images=None,
+    ):
+        references = {
+            name: image
+            for name, image in (reference_images or {}).items()
+            if image is not None
+        }
+        if not references:
+            native = _native_node_class("MiniMaxH3ImageToVideo")
+            return native.execute(
+                clip=clip, vae=vae, prompt=prompt, width=width, height=height, length=length,
+                first_frame=first_frame, last_frame=last_frame,
+            )
+        return MocH3HybridImageReferencesToVideoNode.execute(
+            clip=clip, vae=vae, prompt=prompt, width=width, height=height, length=length,
+            ref_image_size="match", first_frame=first_frame, last_frame=last_frame,
+            reference_images=references,
+        )
 
 
 class MocH3ApplyReferenceWeightsNode(io.ComfyNode):
@@ -1371,5 +1439,6 @@ class MocH3Extension(ComfyExtension):
             MocH3CompilePromptNode,
             MocH3ReferenceToVideoPlusNode,
             MocH3HybridImageReferencesToVideoNode,
+            MocH3ImageToVideoSimpleNode,
             MocH3ApplyReferenceWeightsNode,
         ]

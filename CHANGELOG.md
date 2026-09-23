@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added **H3 Image to Video (Simple)**: stock controls and outputs plus dynamic direct image references (one initial socket, growing as connected), with automatic reference sizing and exact stock delegation when no extra images are connected.
+- Use named native H3 arguments to support ComfyUI versions that reordered the optional VAE inputs.
+
 - Added linear LoKr and full-difference comparison, including effective-dimension matching across adapter formats and ranks.
 - Added weighted LoRA/LoKr merge with streamed safetensors export, exact shared-factor LoKr retention, optional SVD compression, and per-block storage/compression error reports.
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from unittest import mock
 
@@ -17,6 +18,8 @@ if torch is not None and comfy_api is not None:
     from moc_minimax.core import make_reference, plan_references
     from moc_minimax.nodes import (
         MocH3ImageReferenceNode,
+        MocH3ImageToVideoSimpleNode,
+        MocH3Extension,
         _attach_temporal_keyframes,
         _limit_diagnostics,
         _native_inputs,
@@ -28,6 +31,75 @@ if torch is not None and comfy_api is not None:
 
 @unittest.skipIf(torch is None or comfy_api is None, "torch/ComfyUI is not installed in this test environment")
 class NativePreparationTests(unittest.TestCase):
+    def test_simple_node_schema_and_registration(self):
+        self.assertIn(MocH3ImageToVideoSimpleNode, asyncio.run(MocH3Extension().get_node_list()))
+        schema = MocH3ImageToVideoSimpleNode.define_schema()
+        schema.finalize()
+        schema.validate()
+        self.assertEqual([item.id for item in schema.inputs], [
+            "clip", "vae", "prompt", "width", "height", "length", "first_frame", "last_frame",
+            "reference_images",
+        ])
+        self.assertEqual([item.io_type for item in schema.outputs], ["CONDITIONING", "LATENT"])
+        self.assertTrue(all(item.optional for item in schema.inputs[6:]))
+        template = schema.inputs[-1].template
+        self.assertEqual((template.min, template.max), (1, 9))
+        self.assertTrue(template.input.optional)
+
+    def test_simple_node_without_references_delegates_unchanged_to_stock(self):
+        for first, last in ((None, None), (object(), None), (None, object()), (object(), object())):
+            with self.subTest(first=first is not None, last=last is not None):
+                inputs = dict(clip=object(), vae=object(), prompt="A quiet scene", width=640,
+                              height=480, length=23, first_frame=first, last_frame=last)
+                for references in (None, {}, {"reference_image_0": None}):
+                    with mock.patch("moc_minimax.nodes._native_node_class") as factory:
+                        result = MocH3ImageToVideoSimpleNode.execute(**inputs, reference_images=references)
+                    factory.assert_called_once_with("MiniMaxH3ImageToVideo")
+                    factory.return_value.execute.assert_called_once_with(**inputs)
+                    self.assertIs(result, factory.return_value.execute.return_value)
+
+    def test_simple_node_sparse_references_and_temporal_frames(self):
+        from comfy_api.latest import io
+
+        class FakeVae:
+            @staticmethod
+            def encode(image):
+                return image.movedim(-1, 1)
+
+        first, last = torch.ones((1, 32, 32, 3)), torch.zeros((1, 32, 32, 3))
+        ref2, ref4 = torch.full_like(first, 0.2), torch.full_like(first, 0.4)
+        refs = [{"kind": "image", "latent": ref2}, {"kind": "image", "latent": ref4}]
+        original_metadata = {"minimax_refs": refs}
+        latent = {"samples": object()}
+        clip, vae = object(), FakeVae()
+
+        # Keyword-only arguments catch accidental positional delegation when native
+        # ComfyUI moves optional VAE arguments behind the required parameters.
+        def native_execute(*, clip, vae, audio_vae, prompt, width, height, length,
+                           ref_image_size, ref_images, ref_videos, ref_video_audios, ref_audios):
+            self.assertEqual(prompt, "Use <Picture 1> and <Picture 2>")
+            self.assertEqual(ref_image_size, "match")
+            self.assertEqual(list(ref_images), ["ref_image_0", "ref_image_1"])
+            self.assertIs(ref_images["ref_image_0"], ref2)
+            self.assertIs(ref_images["ref_image_1"], ref4)
+            self.assertEqual((ref_videos, ref_video_audios, ref_audios), ({}, {}, {}))
+            return io.NodeOutput([[object(), original_metadata]], latent)
+
+        with mock.patch("moc_minimax.nodes._native_node_class") as factory, \
+             mock.patch("comfy.utils.common_upscale", side_effect=lambda samples, *args: samples):
+            factory.return_value.execute.side_effect = native_execute
+            result = MocH3ImageToVideoSimpleNode.execute(
+                clip, vae, "Use <Picture 1> and <Picture 2>", 32, 32, 23,
+                first_frame=first, last_frame=last,
+                reference_images={"reference_image_0": None, "reference_image_1": ref2,
+                                  "reference_image_2": None, "reference_image_3": ref4},
+            )
+        metadata = result.result[0][0][1]
+        self.assertEqual([kf["resolved_frame_index"] for kf in metadata["minimax_keyframes"]], [0, 38])
+        self.assertIs(metadata["minimax_refs"], refs)
+        self.assertNotIn("minimax_keyframes", original_metadata)
+        self.assertIs(result.result[1], latent)
+
     def test_temporal_keyframes_coexist_with_non_temporal_refs(self):
         class FakeVae:
             @staticmethod

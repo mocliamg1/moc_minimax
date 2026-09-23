@@ -70,7 +70,9 @@ Restart ComfyUI. The nodes appear under **MiniMax H3 → MOC References**.
 6. Replace only the official workflow's native authoring node with `MOC • H3 Reference to Video+`. Connect the same H3 CLIP, video VAE, and audio VAE.
 7. Connect its first two outputs where the native node's `positive` and `latent` outputs were connected.
 
-When the shot also needs temporal first/last images plus independent reference images, use `MOC • H3 Image to Video + References` instead. It preserves the native Image to Video inputs and adds autogrowing ordinary `IMAGE` reference sockets.
+For the stock Image to Video controls with extra image sockets, use **MOC • H3 Image to Video (Simple)**. Connect a `Load Image` output directly to its reference image socket; another socket appears when it is connected, up to nine images. No reference builders or extra settings are needed.
+
+For a reference-sizing control, use `MOC • H3 Image to Video + References`.
 
 The first two outputs deliberately match the native node's order:
 
@@ -204,6 +206,14 @@ Use the same `default_image_detail`, width, height, and length here as on the ma
 ### MOC • H3 Reference to Video+
 
 The main replacement node delegates image/video/audio encoding and latent creation to ComfyUI's native `MiniMaxH3ReferenceToVideo`, then attaches copied per-reference metadata to the returned conditioning.
+
+### MOC • H3 Image to Video (Simple)
+
+The stock H3 inputs (`clip`, `vae`, `prompt`, `width`, `height`, `length`, `first_frame`, `last_frame`) plus optional dynamic `IMAGE` inputs. One reference socket appears initially; connecting it reveals the next, up to nine references. The only outputs are `positive` and `latent`, so reconnect these to the same places as the stock node.
+
+Leave the extra image sockets empty to run ComfyUI's stock `MiniMaxH3ImageToVideo` directly. With extra images connected, the node uses the existing hybrid reference pipeline with sizing fixed to `match`. First/last frames remain temporal anchors; extra images are independent references, numbered `<Picture 1>`, `<Picture 2>`, etc. from top to bottom, skipping empty sockets. For example: `The person from <Picture 1> walks through the room from <Picture 2>.`
+
+Additional references use H3's reference conditioning, so use a reference-capable model and a ComfyUI build that supports references alongside first/last keyframes, as with the hybrid node below. The existing nodes remain available for saved workflows and advanced controls.
 
 ### MOC • H3 Image to Video + References
 

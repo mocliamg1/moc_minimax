@@ -167,13 +167,13 @@ def _validate_native_contract(comfy_root: Path):
     probe = object()
     try:
         bound = signature.bind(
-            probe,
-            probe,
-            probe,
-            probe,
-            1344,
-            768,
-            124,
+            clip=probe,
+            vae=probe,
+            audio_vae=probe,
+            prompt=probe,
+            width=1344,
+            height=768,
+            length=124,
             ref_image_size="match",
             ref_images={},
             ref_videos={},
@@ -334,9 +334,10 @@ def main() -> int:
     main_values = _result(main_output)
     if not isinstance(main_values, tuple) or len(main_values) != 5:
         raise RuntimeError(f"main node returned an unexpected V3 NodeOutput boundary: {type(main_values)!r}")
-    if len(native_call.get("args", ())) != 7:
+    if native_call.get("args", ()):
         raise RuntimeError(f"main node passed an unexpected native positional boundary: {native_call!r}")
     expected_native_kwargs = {
+        "clip", "vae", "audio_vae", "prompt", "width", "height", "length",
         "ref_image_size",
         "ref_images",
         "ref_videos",
