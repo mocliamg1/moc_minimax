@@ -192,9 +192,9 @@
         1.0,
         1.0,
         1.0,
-        "full_diff",
+        "auto",
         64,
-        "float32",
+        "bfloat16",
         "loras/moc_minimax_merge"
       ]
     }

@@ -82,11 +82,12 @@ class MocH3MergeLorasNode(io.ComfyNode):
                                tooltip='Use the same strength as your working stack. Strengths are never normalized; 0 excludes this adapter.'),
             ])
         inputs.extend([
-            io.Combo.Input('output_format', options=list(FORMATS), default='full_diff',
-                           tooltip='full_diff preserves the sum within storage precision. lokr_shared_or_diff keeps identical shared LoKr factors when possible. lora_svd is an approximate rank-limited LoRA.'),
+            io.Combo.Input('output_format', options=list(FORMATS), default='auto',
+                           tooltip='auto preserves compact LoRA/shared LoKr factors when smaller, otherwise uses full differences. full_diff can be model-sized. lokr_shared_or_diff keeps shared LoKr factors when possible. lora_svd is an approximate rank-limited LoRA.'),
             io.Int.Input('rank', default=64, min=1, max=4096, step=1, advanced=True,
-                         tooltip='Used only for lora_svd. CPU SVD can be expensive on large layers.'),
-            io.Combo.Input('storage_dtype', options=list(DTYPES), default='float32', advanced=True),
+                         tooltip='Used only for lora_svd. Large layers use a seeded randomized SVD; the report measures the actual truncation error.'),
+            io.Combo.Input('storage_dtype', options=list(DTYPES), default='bfloat16', advanced=True,
+                           tooltip='bfloat16 halves float32 file size; its rounding is far below the rounding of applying an update to bfloat16 model weights. Use float32 for bit-for-bit reference merges.'),
             io.String.Input('filename_prefix', default='loras/moc_minimax_merge',
                             tooltip='Save under ComfyUI output. A numbered suffix prevents overwriting files.'),
         ])
@@ -98,8 +99,8 @@ class MocH3MergeLorasNode(io.ComfyNode):
                      io.String.Output('report_json'), io.String.Output('saved_path')])
 
     @classmethod
-    def execute(cls, lora_a, strength_a, lora_b, strength_b, output_format='full_diff',
-                rank=64, storage_dtype='float32', filename_prefix='loras/moc_minimax_merge', **kwargs):
+    def execute(cls, lora_a, strength_a, lora_b, strength_b, output_format='auto',
+                rank=64, storage_dtype='bfloat16', filename_prefix='loras/moc_minimax_merge', **kwargs):
         import folder_paths
         from safetensors.torch import load_file
         payloads, strengths = [lora_a, lora_b], [strength_a, strength_b]
@@ -118,7 +119,8 @@ class MocH3MergeLorasNode(io.ComfyNode):
         stream = SafetensorsStream(folder)
         try:
             _, data = merge_adapters(payloads, strengths, output_format=output_format, rank=rank,
-                                     storage_dtype=storage_dtype, tensor_sink=stream.add)
+                                     storage_dtype=storage_dtype, tensor_sink=stream.add,
+                                     tensor_preflight=stream.preflight)
             while True:
                 path = Path(folder) / f'{filename}_{counter:05}_.safetensors'
                 data['saved_path'] = str(path)

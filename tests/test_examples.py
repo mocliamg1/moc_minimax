@@ -18,7 +18,7 @@ class ExampleArtifactTests(unittest.TestCase):
         self.assertEqual(workflow["nodes"][-1]["type"], "MocH3MergeLoras")
         self.assertEqual(workflow["links"], [[i, i, 0, 4, i-1, "MOC_H3_LORA"] for i in (1, 2, 3)])
         self.assertEqual(workflow["nodes"][-1]["widgets_values"][-4:],
-                         ["full_diff", 64, "float32", "loras/moc_minimax_merge"])
+                         ["auto", 64, "bfloat16", "loras/moc_minimax_merge"])
 
     def test_lora_comparison_examples(self):
         graph = json.loads((ROOT / "examples/minimax_h3_lora_compare_api.json").read_text())

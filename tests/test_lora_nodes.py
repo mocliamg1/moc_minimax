@@ -69,7 +69,7 @@ class LoraNodeTests(unittest.TestCase):
         })
         with tempfile.TemporaryDirectory() as directory:
             with mock.patch('folder_paths.get_output_directory', return_value=directory):
-                output = MocH3MergeLorasNode.execute(p, .7, p, .5, lora_c=p, strength_c=.3)
+                output = MocH3MergeLorasNode.execute(p, .7, p, .5, output_format='full_diff', lora_c=p, strength_c=.3)
                 merged, report, report_json, saved_path = output.result
                 self.assertTrue(Path(saved_path).is_file())
                 self.assertIn('apply at strength 1.0', report)
@@ -91,3 +91,13 @@ class LoraNodeTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'Cannot merge'):
                     MocH3MergeLorasNode.execute(p, 1., p, 1.)
             self.assertEqual(list(Path(directory).rglob('*.safetensors')), [])
+
+    def test_low_disk_space_fails_before_writing_and_cleans_staging_file(self):
+        p = dict(tensors={'blocks.0.q.lora_A.weight': torch.ones(1, 16),
+                          'blocks.0.q.lora_B.weight': torch.ones(16, 1)})
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch('folder_paths.get_output_directory', return_value=directory), \
+                 mock.patch('moc_minimax.lora_merge.shutil.disk_usage', return_value=mock.Mock(free=1)):
+                with self.assertRaisesRegex(OSError, 'Merge needs'):
+                    MocH3MergeLorasNode.execute(p, 1., p, 1.)
+            self.assertEqual([p for p in Path(directory).rglob('*') if p.is_file()], [])

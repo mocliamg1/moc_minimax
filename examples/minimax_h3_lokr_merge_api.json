@@ -35,9 +35,9 @@
         0
       ],
       "strength_c": 0.3,
-      "output_format": "full_diff",
+      "output_format": "auto",
       "rank": 64,
-      "storage_dtype": "float32",
+      "storage_dtype": "bfloat16",
       "filename_prefix": "loras/moc_minimax_merge"
     }
   }

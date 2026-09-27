@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Faster `lora_svd` merges: large layers use a seeded randomized SVD (about 45× faster on a 5120×5120 layer, with near-optimal truncation error).
+- Merge node now defaults to bfloat16 storage, halving full-difference files; header space for merge metadata is reserved up front so large merges never shift tensor data on disk.
+- Fixed merge export using twice the output's disk space: publish a single staging file, check available space before merging, and default to compact exact `auto` merges for LoRA/shared-factor LoKr inputs.
 - Added **H3 Image to Video (Simple)**: stock controls and outputs plus dynamic direct image references (one initial socket, growing as connected), with automatic reference sizing and exact stock delegation when no extra images are connected.
 - Use named native H3 arguments to support ComfyUI versions that reordered the optional VAE inputs.
 

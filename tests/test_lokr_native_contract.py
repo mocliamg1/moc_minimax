@@ -68,7 +68,7 @@ class NativeLoKrContractTests(unittest.TestCase):
         })
         payload = {'tensors': {'diffusion_model.blocks.0.q.lokr_w1':torch.ones(2,2),
                                'diffusion_model.blocks.0.q.lokr_w2':torch.ones(2,2)}}
-        merged, _ = merge_adapters([payload, payload], [.7,.5])
+        merged, _ = merge_adapters([payload, payload], [.7,.5], 'full_diff')
         patches = native_load(merged['tensors'], {'diffusion_model.blocks.0.q':'diffusion_model.blocks.0.q.weight'})
         self.assertEqual(set(patches), {'diffusion_model.blocks.0.q.weight'})
         kind, (delta,) = patches['diffusion_model.blocks.0.q.weight']
