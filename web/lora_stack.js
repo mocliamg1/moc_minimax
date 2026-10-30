@@ -155,8 +155,17 @@ const STYLE = `
 .moc-stack .row.drop-after { border-bottom-color: var(--p-primary-color, #4a9eff); }
 .moc-stack .handle { cursor: grab; user-select: none; padding: 0 2px; opacity: .7; }
 .moc-stack .toggle { margin: 0; height: 14px; width: 14px; }
-.moc-stack .lora { flex: 1; min-width: 0; }
+.moc-stack .lora { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.moc-stack .lora.empty-choice { opacity: .6; }
 .moc-stack .lora.missing { border-color: var(--error-text, #ff6b6b); color: var(--error-text, #ff6b6b); }
+.moc-picker { position: fixed; z-index: 10000; display: flex; flex-direction: column; gap: 4px; padding: 4px; box-sizing: border-box; font: 12px sans-serif; color: var(--input-text, #ddd); background: var(--comfy-menu-bg, #2a2a2a); border: 1px solid var(--border-color, #444); border-radius: 6px; box-shadow: 0 4px 16px rgba(0, 0, 0, .5); }
+.moc-picker input { font: inherit; color: inherit; background: var(--comfy-input-bg, #222); border: 1px solid var(--border-color, #444); border-radius: 4px; height: 24px; padding: 0 6px; box-sizing: border-box; outline: none; }
+.moc-picker .list { overflow-y: auto; }
+.moc-picker .item { padding: 3px 6px; border-radius: 3px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.moc-picker .item .folder { opacity: .55; }
+.moc-picker .item.current { font-weight: bold; }
+.moc-picker .item.active { background: var(--p-primary-color, #4a9eff); color: #fff; }
+.moc-picker .note { padding: 3px 6px; opacity: .6; }
 .moc-stack .strength { width: 64px; padding: 0 4px; }
 .moc-stack .empty { opacity: .6; padding: 4px 2px; }
 `;
@@ -173,6 +182,110 @@ function element(tag, props = {}, children = []) {
   const node = Object.assign(document.createElement(tag), props);
   node.append(...children);
   return node;
+}
+
+// ---------------------------------------------------------------- searchable LoRA picker
+
+const PICKER_LIMIT = 300;
+let closeOpenPicker = null;
+
+// Every whitespace-separated term must appear somewhere in the path, in any order.
+function matchesQuery(name, query) {
+  const haystack = name.toLowerCase();
+  return query.toLowerCase().split(/\s+/).filter(Boolean).every((term) => haystack.includes(term));
+}
+
+function pickerItemLabel(name) {
+  const slash = name.lastIndexOf("/");
+  if (slash < 0) return [name];
+  return [element("span", { className: "folder", textContent: name.slice(0, slash + 1) }), name.slice(slash + 1)];
+}
+
+function openPicker(anchor, names, current, initialQuery, onPick) {
+  closeOpenPicker?.();
+  const search = element("input", { type: "text", placeholder: "Type to filter LoRAs…", value: initialQuery, spellcheck: false });
+  const list = element("div", { className: "list" });
+  const popup = element("div", { className: "moc-picker" }, [search, list]);
+  let shown = [];
+  let active = 0;
+
+  const close = () => {
+    popup.remove();
+    document.removeEventListener("pointerdown", onOutside, true);
+    window.removeEventListener("resize", close);
+    if (closeOpenPicker === close) closeOpenPicker = null;
+  };
+  const onOutside = (event) => {
+    if (!popup.contains(event.target)) close();
+  };
+  const pick = (name) => {
+    close();
+    anchor.focus();
+    if (name !== undefined) onPick(name);
+  };
+  const highlight = (index) => {
+    if (!shown.length) return;
+    list.children[active]?.classList.remove("active");
+    active = Math.max(0, Math.min(index, shown.length - 1));
+    list.children[active]?.classList.add("active");
+    list.children[active]?.scrollIntoView({ block: "nearest" });
+  };
+  const render = () => {
+    const matches = names.filter((name) => matchesQuery(name, search.value));
+    shown = matches.slice(0, PICKER_LIMIT);
+    list.replaceChildren(...shown.map((name, index) => element("div", {
+      className: name === current ? "item current" : "item",
+      title: name,
+      onpointerdown: (event) => {
+        event.preventDefault();
+        pick(name);
+      },
+      onpointermove: () => active !== index && highlight(index),
+    }, pickerItemLabel(name))));
+    if (!matches.length) list.append(element("div", { className: "note", textContent: names.length ? "No matching LoRAs" : "No LoRA files found" }));
+    if (matches.length > shown.length) {
+      list.append(element("div", { className: "note", textContent: `${matches.length - shown.length} more — keep typing to narrow down` }));
+    }
+    active = -1;
+    const currentIndex = search.value ? -1 : shown.indexOf(current);
+    highlight(currentIndex >= 0 ? currentIndex : 0);
+  };
+
+  search.addEventListener("input", render);
+  search.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    const page = 10;
+    if (event.key === "ArrowDown") highlight(active + 1);
+    else if (event.key === "ArrowUp") highlight(active - 1);
+    else if (event.key === "PageDown") highlight(active + page);
+    else if (event.key === "PageUp") highlight(active - page);
+    else if (event.key === "Enter") pick(shown[active]);
+    else if (event.key === "Escape") pick(undefined);
+    else if (event.key === "Tab") close();
+    else return;
+    event.preventDefault();
+  });
+  popup.addEventListener("wheel", (event) => event.stopPropagation());
+
+  // Open below the field, or above it when there is more room there.
+  const rect = anchor.getBoundingClientRect();
+  const below = window.innerHeight - rect.bottom - 8;
+  const above = rect.top - 8;
+  const height = Math.min(360, Math.max(below, above));
+  popup.style.left = `${Math.max(4, Math.min(rect.left, window.innerWidth - Math.max(rect.width, 320) - 4))}px`;
+  popup.style.width = `${Math.max(rect.width, 320)}px`;
+  popup.style.maxHeight = `${height}px`;
+  list.style.maxHeight = `${height - 40}px`;
+  if (below >= Math.min(360, above)) popup.style.top = `${rect.bottom + 2}px`;
+  else popup.style.bottom = `${window.innerHeight - rect.top + 2}px`;
+
+  document.body.append(popup);
+  document.addEventListener("pointerdown", onOutside, true);
+  window.addEventListener("resize", close);
+  closeOpenPicker = close;
+  render();
+  search.focus();
+  search.setSelectionRange(search.value.length, search.value.length);
 }
 
 class StackEditor {
@@ -209,8 +322,9 @@ class StackEditor {
       this.rows,
       element("div", { className: "bar" }, [button("+ Add LoRA", "Add a LoRA at the bottom", () => this.addRow())]),
     ]);
-    // Keep pointer and wheel input inside the editor instead of panning the canvas.
-    for (const type of ["pointerdown", "wheel"]) this.root.addEventListener(type, (event) => event.stopPropagation());
+    // Keep pointer, wheel, and key input inside the editor instead of panning the canvas or
+    // triggering shortcuts (Delete would otherwise remove the node while a row is focused).
+    for (const type of ["pointerdown", "wheel", "keydown"]) this.root.addEventListener(type, (event) => event.stopPropagation());
 
     this.widget = node.addDOMWidget("stack_editor", "moc_lora_stack", this.root, {
       serialize: false,
@@ -407,6 +521,7 @@ class StackEditor {
   }
 
   renderRows() {
+    closeOpenPicker?.();
     if (!this.entries.length) {
       this.rows.replaceChildren(element("div", { className: "empty", textContent: "No LoRAs. The model passes through unchanged." }));
       return;
@@ -417,21 +532,25 @@ class StackEditor {
   renderRow(entry, index) {
     const available = loraList ?? [];
     const missing = entry.lora && loraList !== null && !available.includes(entry.lora);
-    const lora = element("select", {
-      className: missing ? "lora missing" : "lora",
-      title: missing ? `${entry.lora} is not in the loras folders` : entry.lora,
-      onchange: () => {
-        entry.lora = lora.value;
-        this.structureChanged();
-      },
-    }, [
-      element("option", { value: "", textContent: "Choose LoRA…" }),
-      ...(missing || (entry.lora && loraList === null)
-        ? [element("option", { value: entry.lora, textContent: missing ? `${entry.lora} (missing)` : entry.lora })]
-        : []),
-      ...available.map((name) => element("option", { value: name, textContent: name })),
-    ]);
-    lora.value = entry.lora;
+    const lora = element("button", {
+      className: `lora${missing ? " missing" : ""}${entry.lora ? "" : " empty-choice"}`,
+      textContent: entry.lora ? `${entry.lora}${missing ? " (missing)" : ""}` : "Choose LoRA…",
+      title: missing ? `${entry.lora} is not in the loras folders` : entry.lora || "Click or start typing to search LoRAs",
+    });
+    const choose = (query = "") => openPicker(lora, available, entry.lora, query, (name) => {
+      if (name === entry.lora) return;
+      entry.lora = name;
+      this.structureChanged();
+      this.rows.children[index]?.querySelector(".lora")?.focus();
+    });
+    lora.addEventListener("click", () => choose());
+    lora.addEventListener("keydown", (event) => {
+      const typed = event.key.length === 1 && event.key !== " " && !event.ctrlKey && !event.metaKey && !event.altKey;
+      if (!typed && !["Enter", " ", "ArrowDown"].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      choose(typed ? event.key : "");
+    });
 
     const strength = element("input", {
       className: "strength", type: "number", step: 0.05, min: -STRENGTH_LIMIT, max: STRENGTH_LIMIT,
@@ -511,6 +630,7 @@ app.registerExtension({
     };
     const onRemoved = nodeType.prototype.onRemoved;
     nodeType.prototype.onRemoved = function () {
+      closeOpenPicker?.();
       editors.delete(this.mocStackEditor);
       return onRemoved?.apply(this, arguments);
     };

@@ -1,9 +1,10 @@
 """Ordered model-only LoRA stacks with named presets in the ComfyUI user directory.
 
-A stack applies its enabled entries top to bottom with the same call as chained
-LoraLoaderModelOnly nodes. Presets are JSON files under user/<user>/lora_stacks;
-the stack node's interface (web/lora_stack.js) saves them through ComfyUI's
-user-data API and keeps a copy of the stack in the workflow.
+A stack applies its enabled entries top to bottom, each at strength × the node's
+strength multiplier, with the same call as chained LoraLoaderModelOnly nodes.
+Presets are JSON files under user/<user>/lora_stacks; the stack node's interface
+(web/lora_stack.js) saves them through ComfyUI's user-data API and keeps a copy
+of the stack in the workflow. The multiplier is a node setting, not part of presets.
 """
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ SCHEMA_VERSION = 1
 STACK_DIR = 'lora_stacks'
 MAX_ENTRIES = 100
 STRENGTH_LIMIT = 100.0
+MULTIPLIER_LIMIT = 10.0
 EMPTY_STACK = json.dumps(dict(schema_version=SCHEMA_VERSION, entries=[]))
 CATEGORY = 'MOC/LoRA'
 _NAME_PART = re.compile(r'[A-Za-z0-9_\-][A-Za-z0-9 _.\-]{0,99}')
@@ -120,11 +122,14 @@ def _load(path, previous):
     return signature, lora, metadata
 
 
-def apply_stack(model, entries, cache_key=None):
-    """Apply enabled, nonzero entries in order, like chained model-only LoRA loaders."""
+def apply_stack(model, entries, multiplier=1.0, cache_key=None):
+    """Apply enabled entries in order at strength × multiplier, like chained model-only LoRA loaders."""
     import comfy.sd
     import folder_paths
-    active = [e for e in entries if e['enabled'] and e['strength'] != 0]
+    if isinstance(multiplier, bool) or not isinstance(multiplier, (int, float)) or not math.isfinite(multiplier):
+        raise ValueError('Strength multiplier must be a finite number.')
+    active = [dict(e, strength=e['strength'] * multiplier) for e in entries
+              if e['enabled'] and e['strength'] * multiplier != 0]
     paths = {e['lora']: folder_paths.get_full_path('loras', e['lora']) for e in active}
     missing = [name for name, path in paths.items() if path is None]
     if missing:
@@ -154,13 +159,16 @@ class MocLoraStackNode(io.ComfyNode):
                 io.Model.Input('model'),
                 io.String.Input('stack_data', default=EMPTY_STACK,
                                 tooltip='Managed by the stack editor. Holds the rows applied when the workflow runs.'),
+                io.Float.Input('strength_multiplier', default=1.0, min=-MULTIPLIER_LIMIT, max=MULTIPLIER_LIMIT, step=0.05,
+                               tooltip='Multiplies every strength in the stack. Not saved with presets; 0 disables the stack.'),
             ],
             outputs=[io.Model.Output('model')],
             hidden=[io.Hidden.unique_id])
 
     @classmethod
-    def execute(cls, model, stack_data=EMPTY_STACK):
-        return io.NodeOutput(apply_stack(model, parse_stack(stack_data), cache_key=str(cls.hidden.unique_id)))
+    def execute(cls, model, stack_data=EMPTY_STACK, strength_multiplier=1.0):
+        return io.NodeOutput(apply_stack(model, parse_stack(stack_data), strength_multiplier,
+                                         cache_key=str(cls.hidden.unique_id)))
 
 
 class MocApplyLoraStackByNameNode(io.ComfyNode):
@@ -174,6 +182,8 @@ class MocApplyLoraStackByNameNode(io.ComfyNode):
                 io.Model.Input('model'),
                 io.Combo.Input('stack_name', options=list_stacks(),
                                tooltip=f'Stacks saved by MOC • LoRA Stack in user/default/{STACK_DIR}.'),
+                io.Float.Input('strength_multiplier', default=1.0, min=-MULTIPLIER_LIMIT, max=MULTIPLIER_LIMIT, step=0.05,
+                               tooltip='Multiplies every strength in the stack. Not saved with presets; 0 disables the stack.'),
             ],
             outputs=[io.Model.Output('model')],
             hidden=[io.Hidden.unique_id])
@@ -187,5 +197,6 @@ class MocApplyLoraStackByNameNode(io.ComfyNode):
             return float('nan')
 
     @classmethod
-    def execute(cls, model, stack_name):
-        return io.NodeOutput(apply_stack(model, read_stack(stack_name), cache_key=str(cls.hidden.unique_id)))
+    def execute(cls, model, stack_name, strength_multiplier=1.0):
+        return io.NodeOutput(apply_stack(model, read_stack(stack_name), strength_multiplier,
+                                         cache_key=str(cls.hidden.unique_id)))

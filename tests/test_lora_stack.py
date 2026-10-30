@@ -57,7 +57,11 @@ class LoraStackTests(unittest.TestCase):
             schema.finalize()
             schema.validate()
             self.assertEqual([o.io_type for o in schema.outputs], ['MODEL'])
-        self.assertEqual([i.id for i in MocLoraStackNode.define_schema().inputs], ['model', 'stack_data'])
+        # New inputs go last so widget values of saved workflows keep their positions.
+        self.assertEqual([i.id for i in MocLoraStackNode.define_schema().inputs],
+                         ['model', 'stack_data', 'strength_multiplier'])
+        self.assertEqual([i.id for i in MocApplyLoraStackByNameNode.define_schema().inputs],
+                         ['model', 'stack_name', 'strength_multiplier'])
 
     def test_applies_in_order_like_chained_model_only_loaders(self):
         import nodes
@@ -75,6 +79,22 @@ class LoraStackTests(unittest.TestCase):
         self.assertEqual(native_calls, self.apply_lora.call_args_list)
         # A file used twice is read once.
         self.assertEqual(self.load_file.call_count, 2 + 3)
+
+    def test_strength_multiplier_scales_every_entry(self):
+        data = stack(('a.safetensors', .4, True), ('b.safetensors', -.2, True), ('c.safetensors', .3, False))
+        with mock.patch.object(MocLoraStackNode, 'hidden', mock.Mock(unique_id='5'), create=True):
+            result = MocLoraStackNode.execute([], data, strength_multiplier=.5).result[0]
+        self.assertEqual(result, [('a.safetensors', .2), ('b.safetensors', -.1)])
+        self.save('mix', data)
+        with mock.patch.object(MocApplyLoraStackByNameNode, 'hidden', mock.Mock(unique_id='6'), create=True):
+            result = MocApplyLoraStackByNameNode.execute([], 'mix', strength_multiplier=2.).result[0]
+        self.assertEqual(result, [('a.safetensors', .8), ('b.safetensors', -.4)])
+        model = object()
+        self.assertIs(apply_stack(model, parse_stack(data), 0.), model)
+        self.apply_lora.reset_mock()
+        with self.assertRaisesRegex(ValueError, 'multiplier'):
+            apply_stack(model, parse_stack(data), float('inf'))
+        self.apply_lora.assert_not_called()
 
     def test_cache_reuses_unchanged_files_and_reloads_replaced_ones(self):
         data = stack(('a.safetensors', 1., True), ('b.safetensors', 1., True))
