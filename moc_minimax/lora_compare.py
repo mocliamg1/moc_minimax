@@ -5,7 +5,7 @@ import json
 import math
 from collections.abc import Mapping
 
-from .adapters import adapter_stats as _stats, block_name as _block, parse_adapters as _parse
+from .adapters import adapter_stats as _stats, block_name as _block, parse_adapters as _parse, payload_strength
 
 ATOL = 1e-8
 RTOL = 1e-5
@@ -27,12 +27,16 @@ def compare_loras(lora_a, lora_b, matching="strict"):
     result = dict(schema_version=1,
                   sources={s: p.get('source', '<unknown>') if isinstance(p, Mapping) else '<unknown>'
                            for s, p in [('a', lora_a), ('b', lora_b)]},
+                  strengths=dict(a=payload_strength(lora_a), b=payload_strength(lora_b)),
                   compatible=False, score=None, overall=None, matching=matching,
                   metric='100 * (1 - ||X-Y||^2 / (||X||+||Y||)^2)',
-                  interpretation='Weight-update similarity at strength 1; does not predict visual similarity.',
+                  interpretation='Weight-update similarity at the loaded strengths; does not predict visual similarity.',
                   tolerances=dict(atol=ATOL, rtol=RTOL), blocks=[], non_block_modules=[],
                   diagnostics=diagnostics)
     left, right = _parse(lora_a, 'A', diagnostics), _parse(lora_b, 'B', diagnostics)
+    for adapters, strength in ((left, result['strengths']['a']), (right, result['strengths']['b'])):
+        for adapter in adapters.values():
+            adapter.scale *= strength
     for name in sorted(left.keys() - right.keys()):
         diagnostics.append(f'B: missing target {name}.')
     for name in sorted(right.keys() - left.keys()):
@@ -79,7 +83,8 @@ def compare_loras(lora_a, lora_b, matching="strict"):
 
 
 def render_comparison(result):
-    lines = ['MiniMax H3 LoRA comparison', f"A: {result['sources']['a']}", f"B: {result['sources']['b']}", result['interpretation']]
+    lines = ['MiniMax H3 LoRA comparison', f"A: {result['sources']['a']} × {result['strengths']['a']}",
+             f"B: {result['sources']['b']} × {result['strengths']['b']}", result['interpretation']]
     if not result['compatible']:
         return '\n'.join([*lines, 'Incompatible — no similarity score.', *result['diagnostics']])
     overall = result['overall']

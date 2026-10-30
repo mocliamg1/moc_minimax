@@ -127,6 +127,14 @@ def _build(name, raw_name, entry):
     raise ValueError('incomplete, mixed, or unsupported adapter entries')
 
 
+def payload_strength(payload):
+    """Loader strength carried by a payload; merged or older payloads default to 1."""
+    strength = payload.get('strength', 1.) if isinstance(payload, Mapping) else 1.
+    if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not math.isfinite(strength):
+        raise ValueError('LoRA strength must be a finite number.')
+    return float(strength)
+
+
 def parse_adapters(payload, side, diagnostics):
     state = payload.get('tensors') if isinstance(payload, Mapping) else None
     if not isinstance(state, Mapping) or not state:

@@ -31,7 +31,8 @@
         "Node name for S&R": "MocH3LoadLora"
       },
       "widgets_values": [
-        "first_lora.safetensors"
+        "first_lora.safetensors",
+        1.0
       ]
     },
     {
@@ -63,7 +64,8 @@
         "Node name for S&R": "MocH3LoadLora"
       },
       "widgets_values": [
-        "second_lora.safetensors"
+        "second_lora.safetensors",
+        1.0
       ]
     },
     {

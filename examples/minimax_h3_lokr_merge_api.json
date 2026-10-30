@@ -2,39 +2,39 @@
   "1": {
     "class_type": "MocH3LoadLora",
     "inputs": {
-      "lora_name": "checkpoint_1.safetensors"
+      "lora_name": "checkpoint_1.safetensors",
+      "strength": 0.7
     }
   },
   "2": {
     "class_type": "MocH3LoadLora",
     "inputs": {
-      "lora_name": "checkpoint_2.safetensors"
+      "lora_name": "checkpoint_2.safetensors",
+      "strength": 0.5
     }
   },
   "3": {
     "class_type": "MocH3LoadLora",
     "inputs": {
-      "lora_name": "checkpoint_3.safetensors"
+      "lora_name": "checkpoint_3.safetensors",
+      "strength": 0.3
     }
   },
   "4": {
     "class_type": "MocH3MergeLoras",
     "inputs": {
-      "lora_a": [
+      "loras.lora_0": [
         "1",
         0
       ],
-      "strength_a": 0.7,
-      "lora_b": [
+      "loras.lora_1": [
         "2",
         0
       ],
-      "strength_b": 0.5,
-      "lora_c": [
+      "loras.lora_2": [
         "3",
         0
       ],
-      "strength_c": 0.3,
       "output_format": "auto",
       "rank": 64,
       "storage_dtype": "bfloat16",

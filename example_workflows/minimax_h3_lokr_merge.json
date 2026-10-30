@@ -31,7 +31,8 @@
         "Node name for S&R": "MocH3LoadLora"
       },
       "widgets_values": [
-        "checkpoint_1.safetensors"
+        "checkpoint_1.safetensors",
+        0.7
       ]
     },
     {
@@ -63,7 +64,8 @@
         "Node name for S&R": "MocH3LoadLora"
       },
       "widgets_values": [
-        "checkpoint_2.safetensors"
+        "checkpoint_2.safetensors",
+        0.5
       ]
     },
     {
@@ -95,7 +97,8 @@
         "Node name for S&R": "MocH3LoadLora"
       },
       "widgets_values": [
-        "checkpoint_3.safetensors"
+        "checkpoint_3.safetensors",
+        0.3
       ]
     },
     {
@@ -106,50 +109,30 @@
         80
       ],
       "size": [
-        640,
-        650
+        400,
+        300
       ],
       "flags": {},
       "order": 3,
       "mode": 0,
       "inputs": [
         {
-          "name": "lora_a",
+          "name": "loras.lora_0",
           "type": "MOC_H3_LORA",
           "link": 1
         },
         {
-          "name": "lora_b",
+          "name": "loras.lora_1",
           "type": "MOC_H3_LORA",
           "link": 2
         },
         {
-          "name": "lora_c",
+          "name": "loras.lora_2",
           "type": "MOC_H3_LORA",
           "link": 3
         },
         {
-          "name": "lora_d",
-          "type": "MOC_H3_LORA",
-          "link": null
-        },
-        {
-          "name": "lora_e",
-          "type": "MOC_H3_LORA",
-          "link": null
-        },
-        {
-          "name": "lora_f",
-          "type": "MOC_H3_LORA",
-          "link": null
-        },
-        {
-          "name": "lora_g",
-          "type": "MOC_H3_LORA",
-          "link": null
-        },
-        {
-          "name": "lora_h",
+          "name": "loras.lora_3",
           "type": "MOC_H3_LORA",
           "link": null
         }
@@ -184,14 +167,6 @@
         "Node name for S&R": "MocH3MergeLoras"
       },
       "widgets_values": [
-        0.7,
-        0.5,
-        0.3,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
         "auto",
         64,
         "bfloat16",

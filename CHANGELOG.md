@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Breaking (merge workflows):** Merge LoRA / LoKr now takes 2–20 autogrowing `lora` sockets instead of eight fixed `lora_a`…`lora_h` inputs. Per-adapter strengths moved to a new `strength` widget on **H3 Load LoRA** (default 1.0), which Compare also applies. Re-link saved merge workflows and set strengths on the loaders.
 - Faster `lora_svd` merges: large layers use a seeded randomized SVD (about 45× faster on a 5120×5120 layer, with near-optimal truncation error).
 - Merge node now defaults to bfloat16 storage, halving full-difference files; header space for merge metadata is reserved up front so large merges never shift tensor data on disk.
 - Fixed merge export using twice the output's disk space: publish a single staging file, check available space before merging, and default to compact exact `auto` merges for LoRA/shared-factor LoKr inputs.

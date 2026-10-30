@@ -13,9 +13,12 @@ class ExampleArtifactTests(unittest.TestCase):
         graph = json.loads((ROOT / "examples/minimax_h3_lokr_merge_api.json").read_text())
         merge = graph["4"]
         self.assertEqual(merge["class_type"], "MocH3MergeLoras")
-        self.assertEqual([merge["inputs"]["strength_" + letter] for letter in "abc"], [.7, .5, .3])
+        self.assertEqual([graph[n]["inputs"]["strength"] for n in "123"], [.7, .5, .3])
+        self.assertEqual([merge["inputs"][f"loras.lora_{i}"] for i in range(3)], [[n, 0] for n in "123"])
         workflow = json.loads((ROOT / "example_workflows/minimax_h3_lokr_merge.json").read_text())
         self.assertEqual(workflow["nodes"][-1]["type"], "MocH3MergeLoras")
+        self.assertEqual([n["widgets_values"][-1] for n in workflow["nodes"][:3]], [.7, .5, .3])
+        self.assertEqual([i["name"] for i in workflow["nodes"][-1]["inputs"]], [f"loras.lora_{i}" for i in range(4)])
         self.assertEqual(workflow["links"], [[i, i, 0, 4, i-1, "MOC_H3_LORA"] for i in (1, 2, 3)])
         self.assertEqual(workflow["nodes"][-1]["widgets_values"][-4:],
                          ["auto", 64, "bfloat16", "loras/moc_minimax_merge"])
