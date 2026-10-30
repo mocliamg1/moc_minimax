@@ -308,6 +308,16 @@ python scripts/validate_comfy.py /path/to/ComfyUI
 
 MIT. MiniMax H3 model weights have their own license; this repository does not redistribute them.
 
+## LoRA stacks
+
+**MOC • LoRA Stack** (under **MOC → LoRA**) replaces a chain of model-only LoRA loaders with one node. Connect a `MODEL`, add rows with **+ Add LoRA**, and connect the `model` output where the last loader's output went. Each row has an on/off checkbox, a LoRA file, a strength (−100 to 100), a remove button, and a drag handle (≡) for reordering. Enabled rows with a nonzero strength are applied top to bottom with the same call as chained `LoraLoaderModelOnly` nodes, so the result is identical to the hand-built chain. Loaded files are cached per node and reloaded only when a file changes. A row whose file is no longer in the LoRA folders is shown in red; running the workflow then fails with an error naming every missing file instead of skipping it. CLIP/text-encoder weights are not patched.
+
+**Save**, **Save as…**, **Revert**, and **Delete** act immediately, without queueing the workflow. Stacks are saved as JSON in `ComfyUI/user/<user>/lora_stacks/<name>.json`; names may contain `/` for subfolders. Choosing a saved stack in the dropdown copies its rows into the node. The workflow stores its own copy of the rows and always runs from that copy, so editing or deleting a saved stack never changes an existing workflow. **● modified** shows that the node's rows differ from the saved stack: **Save** updates the saved stack, **Revert** reloads it. **↻** refreshes the saved stacks and the LoRA file list.
+
+**MOC • Apply LoRA Stack by Name** applies a saved stack by reading its file on every run, so one edit updates every workflow that uses it. It re-runs when the file changes, and its dropdown updates when a stack is saved or deleted. It reads stacks of the `default` user, which is the only user unless ComfyUI runs with `--multi-user`.
+
+The file format is `{"schema_version": 1, "entries": [{"lora": "style.safetensors", "strength": 0.2, "enabled": true}]}`, with at most 100 entries.
+
 ## Compare MiniMax H3 LoRAs
 
 Under **MiniMax H3 → MOC LoRA**, connect two **MOC • H3 Load LoRA** nodes to **MOC • H3 Compare LoRAs**. Each loader selects a file from ComfyUI's configured LoRA folders and loads it safely on CPU, together with a `strength` (default `1.0`) that Compare and Merge apply. No base model or GPU is needed. Replacing a file invalidates the loader cache using its path, size, timestamps, and inode.

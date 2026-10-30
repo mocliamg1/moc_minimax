@@ -41,6 +41,7 @@ from .media import (
 )
 from .weighting import install_reference_weight_patch
 from .lora_nodes import MocH3LoadLoraNode, MocH3CompareLorasNode, MocH3MergeLorasNode
+from .lora_stack import MocApplyLoraStackByNameNode, MocLoraStackNode
 
 
 CATEGORY = "MiniMax H3/MOC References"
@@ -1432,6 +1433,8 @@ class MocH3Extension(ComfyExtension):
             MocH3LoadLoraNode,
             MocH3CompareLorasNode,
             MocH3MergeLorasNode,
+            MocLoraStackNode,
+            MocApplyLoraStackByNameNode,
             MocH3ImageReferenceNode,
             MocH3VideoReferenceNode,
             MocH3AudioReferenceNode,

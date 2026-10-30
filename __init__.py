@@ -7,5 +7,8 @@ async def comfy_entrypoint() -> MocH3Extension:
     return MocH3Extension()
 
 
-__all__ = ["comfy_entrypoint"]
+# Frontend for the LoRA Stack editor.
+WEB_DIRECTORY = "./web"
+
+__all__ = ["comfy_entrypoint", "WEB_DIRECTORY"]
 
